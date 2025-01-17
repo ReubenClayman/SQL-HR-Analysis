@@ -1,0 +1,77 @@
+-- 1. Calculate expected payment for each client based on timesheet data and charge rates
+WITH client_expected_payments AS (
+    SELECT 
+        t.client_id,
+        SUM(t.hours_logged * r.rate_per_hour) AS expected_payment
+    FROM timesheets t
+    INNER JOIN consultants c
+        ON t.consultant_id = c.consultant_id
+    INNER JOIN charge_rates r
+        ON c.position_id = r.position_id
+    GROUP BY t.client_id
+)
+-- Explanation: This CTE calculates the total expected payment for each client by multiplying
+-- the logged hours by the rate per hour for the consultant's position and summing it.
+
+-- 2. Compare expected payments with actual billings
+SELECT 
+    b.client_id,
+    b.total_billed AS actual_payment,
+    e.expected_payment,
+    (b.total_billed - e.expected_payment) AS discrepancy
+FROM billings b
+INNER JOIN client_expected_payments e
+    ON b.client_id = e.client_id;
+-- Explanation: This query joins the billings table with the calculated expected payments
+-- and computes the discrepancy between actual and expected payments.
+
+-- 3. Identify clients with overpayments or underpayments
+SELECT 
+    client_id,
+    discrepancy,
+    CASE
+        WHEN discrepancy > 0 THEN 'Overpayment'
+        WHEN discrepancy < 0 THEN 'Underpayment'
+        ELSE 'Match'
+    END AS payment_status
+FROM (
+    SELECT 
+        b.client_id,
+        (b.total_billed - e.expected_payment) AS discrepancy
+    FROM billings b
+    INNER JOIN client_expected_payments e
+        ON b.client_id = e.client_id
+) discrepancies;
+-- Explanation: This query categorizes each client as having an overpayment, underpayment, or matching payment
+-- based on the calculated discrepancy.
+
+-- Additional Analysis: Total discrepancies grouped by status
+SELECT 
+    payment_status,
+    COUNT(client_id) AS num_clients,
+    SUM(discrepancy) AS total_discrepancy
+FROM (
+    SELECT 
+        client_id,
+        discrepancy,
+        CASE
+            WHEN discrepancy > 0 THEN 'Overpayment'
+            WHEN discrepancy < 0 THEN 'Underpayment'
+            ELSE 'Match'
+        END AS payment_status
+    FROM (
+        SELECT 
+            b.client_id,
+            (b.total_billed - e.expected_payment) AS discrepancy
+        FROM billings b
+        INNER JOIN client_expected_payments e
+            ON b.client_id = e.client_id
+    ) discrepancies
+) summary
+GROUP BY payment_status;
+-- Explanation: This query aggregates the total number of clients and the sum of discrepancies by payment status.
+
+-- Notes:
+-- - Replace table and column names with those specific to your database schema.
+-- - Ensure foreign key relationships exist between tables for joins to work correctly.
+-- - Test the queries with sample data to ensure correctness.
